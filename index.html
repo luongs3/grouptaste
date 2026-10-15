@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GroupTaste — the place everyone actually likes</title>
+<style>
+body{font:16px/1.5 system-ui,sans-serif;max-width:900px;margin:2rem auto;padding:0 1rem;color:#111}
+h1{margin:0}.sub{color:#555;margin:.2rem 0 1.2rem}
+.m{display:flex;gap:.5rem;margin:.3rem 0}.m input{flex:1;padding:.45rem}
+textarea,input,select{font:inherit}textarea{width:100%;height:3.6rem;padding:.45rem}
+button{padding:.55rem 1rem;font:inherit;cursor:pointer}
+table{border-collapse:collapse;width:100%;margin-top:1rem}td,th{border-bottom:1px solid #ddd;padding:.35rem;text-align:left;font-size:.95rem}
+.pick{background:#eaf7ea}.bar{display:inline-block;height:.6rem;background:#3a7;vertical-align:middle;margin-right:.3rem}
+.warn{background:#fff4e0;padding:.6rem;border-radius:6px;margin-top:1rem}.muted{color:#777;font-size:.85rem}
+.row{display:flex;gap:1rem;align-items:center;flex-wrap:wrap;margin:.8rem 0}
+</style></head><body>
+<h1>GroupTaste</h1>
+<p class="sub">Each person lists a few things they love — bands, films, shows, books. Qloo's taste graph proposes places for
+each of them, then scores <b>every</b> option against <b>every</b> person. We pick the place whose least-happy person is
+happiest, so nobody gets dragged somewhere that's only great for the loudest friend.</p>
+<div id="members"></div>
+<button onclick="add()">+ person</button>
+<div class="row"><label>City <input id="city" value="New York"></label>
+<label>Going to <select id="kind"><option value="bar">a bar</option><option value="restaurant">a restaurant</option><option value="any">anywhere</option></select></label></div>
+<p class="muted">Optional: places you're already arguing about (one per line). Leave empty and the agent proposes them.</p>
+<textarea id="venues"></textarea>
+<p><button onclick="go()">Find our place</button></p>
+<div id="out"></div>
+<script>
+const seed=[["Ana","Radiohead, Wes Anderson, Sideways"],["Ben","Metallica, Fast & Furious, Guy Fieri"],["Chi","Taylor Swift, Gilmore Girls, Pride and Prejudice"]];
+function add(n="",l=""){const d=document.createElement('div');d.className='m';d.innerHTML=`<input placeholder="name" value="${n}" style="flex:.3"><input placeholder="things they love, comma separated" value="${l}">`;members.appendChild(d)}
+seed.forEach(s=>add(...s));
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function go(){
+ const ms=[...members.children].map(d=>{const [n,l]=d.querySelectorAll('input');return{name:n.value||'?',loves:l.value.split(',').map(s=>s.trim()).filter(Boolean)}}).filter(m=>m.loves.length);
+ if(ms.length<2){out.innerHTML='<p class=warn>Add at least two people.</p>';return}
+ out.innerHTML='<p>Asking Qloo about each person… (≈30–60s; the hackathon API is rate-limited)</p>';
+ const r=await fetch('api/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({members:ms,city:city.value,kind:kind.value,venues:venues.value.split('\n').map(s=>s.trim()).filter(Boolean)})});
+ const j=await r.json(); if(j.error){out.innerHTML='<p class=warn>'+esc(j.error)+'</p>';return}
+ const pc=x=>Math.round(x*100);
+ const where=Object.fromEntries((j.places||[]).map(p=>[p.name,p]));
+ let h=`<h2>Go to ${esc(j.pick.name)}</h2><p>${esc(where[j.pick.name]?.address||'')}</p><p>Qloo taste affinity for each person: `+ms.map((m,i)=>`${esc(m.name)} ${pc(j.pick.scores[i])}`).join(' · ')+`. Least-happy person: <b>${pc(j.pick.worst)}</b>.</p>`;
+ if(j.loudestPick.name!==j.pick.name){const L=j.loudestPick;const wi=L.scores.indexOf(L.worst);
+  h+=`<p class=warn>Picking for ${esc(ms[0].name)} alone would choose <b>${esc(L.name)}</b> (${esc(ms[0].name)} ${pc(L.scores[0])}) — but ${esc(ms[wi].name)} drops to ${pc(L.worst)}.</p>`}
+ h+='<table><tr><th>place</th><th>proposed for</th>'+ms.map(m=>`<th>${esc(m.name)}</th>`).join('')+'<th>least happy</th></tr>';
+ j.ranked.forEach(v=>{h+=`<tr class="${v.name===j.pick.name?'pick':''}"><td>${esc(v.name)}<div class=muted>${esc(where[v.name]?.address||'')}</div></td><td>${esc(where[v.name]?.proposedFor||'you')}</td>`+v.scores.map((s,i)=>`<td><span class=bar style="width:${Math.round(v.shown[i]*60)+4}px"></span>${pc(s)}</td>`).join('')+`<td><b>${pc(v.worst)}</b></td></tr>`});
+ out.innerHTML=h+'</table><p class=muted>Scores are Qloo Insights affinity (0–100) of each place for each person\'s taste signals; bar length is relative within that person.</p>';
+}
+</script></body></html>
